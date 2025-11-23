@@ -10,11 +10,11 @@ app.use(express.json());
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 
-// Toutes tes chaînes, avec l'ordre de priorité de base
-// (on va ensuite trier selon qui est live ou non)
+// 🎯 Ajout de "dacemaster" dans la liste suivie
 const CHANNELS = [
-  "valiv2",          // Vali - priorité absolue
+  "valiv2",          // Vali
   "crackthecode1",   // toi
+  "dacemaster",      // ← 🔥 AJOUT CRITIQUE (login réel)
   "whiteshad0wz1989",
   "lyvickmax",
   "skyrroztv",
@@ -62,7 +62,7 @@ async function getAccessToken() {
   return accessToken;
 }
 
-// Retourne la liste des chaînes qui sont live (en minuscules)
+// Retourne la liste des chaînes qui sont live
 async function getLiveStatus() {
   const token = await getAccessToken();
 
@@ -82,35 +82,30 @@ async function getLiveStatus() {
     data = JSON.parse(text);
   } catch (e) {
     console.error("❌ Erreur JSON Twitch /streams:", text);
-    // On ne casse pas tout : on considère qu'il n'y a personne de live
     return [];
   }
 
   if (!res.ok) {
     console.error("❌ Erreur Twitch /streams:", data);
-    // Pareil : pas de live si erreur
     return [];
   }
 
   if (!data || !Array.isArray(data.data)) {
     console.error("❌ Format inattendu Twitch /streams:", data);
-    // Pas de tableau data.data → personne live
     return [];
   }
 
-  // Ici seulement on fait .map, car on sait que data.data est un tableau
   return data.data.map(s => s.user_login.toLowerCase());
 }
 
 // Route principale : /live-order
 app.get("/live-order", async (req, res) => {
   try {
-    const liveList = await getLiveStatus();  // ex: ["valiv2","skyrroztv"]
+    const liveList = await getLiveStatus();
 
     const live = [];
     const offline = [];
 
-    // Sépare les chaînes live et offline en respectant l'ordre de CHANNELS
     for (const ch of CHANNELS) {
       if (liveList.includes(ch.toLowerCase())) live.push(ch);
       else offline.push(ch);
@@ -122,14 +117,12 @@ app.get("/live-order", async (req, res) => {
     let ordered = [];
 
     if (liveList.includes(vali.toLowerCase())) {
-      // 🎯 Vali est live → il est toujours #1
       ordered = [
         vali,
         ...liveNoVali,
         ...offline.filter(c => c.toLowerCase() !== vali.toLowerCase())
       ];
     } else {
-      // Vali n'est pas live → on garde l'ordre: live d'abord, puis offline
       ordered = [...live, ...offline];
     }
 
@@ -143,13 +136,10 @@ app.get("/live-order", async (req, res) => {
   }
 });
 
-// Route simple de test
+// Route test
 app.get("/", (req, res) => {
   res.send("CrackTheCode Twitch API OK");
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("API running on port " + PORT));
-
-
-
