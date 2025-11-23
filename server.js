@@ -10,18 +10,23 @@ app.use(express.json());
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 
-// Toutes tes chaînes, avec l'ordre de priorité de base
-// (on va ensuite trier selon qui est live ou non)
+/* ============================================================
+   🔥 LISTE DES CHAÎNES
+   facteurgeek est AJOUTÉ EN DERNIER
+============================================================ */
 const CHANNELS = [
-  "valiv2",          // Vali - priorité absolue
-  "crackthecode1",   // toi
+  "valiv2",          
+  "crackthecode1",   
   "whiteshad0wz1989",
   "lyvickmax",
   "skyrroztv",
   "cohhcarnage",
   "lvndmark",
   "eslcs",
-  "explorajeux"
+  "explorajeux",
+  "lesfaineants",
+  "dacemaster",
+  "facteurgeek"        // ⭐ en dernier dans la liste
 ];
 
 let accessToken = null;
@@ -69,12 +74,15 @@ async function getLiveStatus() {
   const params = new URLSearchParams();
   CHANNELS.forEach(c => params.append("user_login", c));
 
-  const res = await fetch("https://api.twitch.tv/helix/streams?" + params.toString(), {
-    headers: {
-      "Client-ID": TWITCH_CLIENT_ID,
-      "Authorization": `Bearer ${token}`,
+  const res = await fetch(
+    "https://api.twitch.tv/helix/streams?" + params.toString(),
+    {
+      headers: {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": `Bearer ${token}`,
+      }
     }
-  });
+  );
 
   const text = await res.text();
   let data;
@@ -82,58 +90,67 @@ async function getLiveStatus() {
     data = JSON.parse(text);
   } catch (e) {
     console.error("❌ Erreur JSON Twitch /streams:", text);
-    // On ne casse pas tout : on considère qu'il n'y a personne de live
     return [];
   }
 
   if (!res.ok) {
     console.error("❌ Erreur Twitch /streams:", data);
-    // Pareil : pas de live si erreur
     return [];
   }
 
   if (!data || !Array.isArray(data.data)) {
     console.error("❌ Format inattendu Twitch /streams:", data);
-    // Pas de tableau data.data → personne live
     return [];
   }
 
-  // Ici seulement on fait .map, car on sait que data.data est un tableau
   return data.data.map(s => s.user_login.toLowerCase());
 }
 
-// Route principale : /live-order
+/* ============================================================
+   ROUTE : /live-order
+   RÈGLE :
+   - facteurgeek est toujours #1 s'il est live
+   - sinon vali (#2)
+   - sinon live en ordre naturel, puis offline
+============================================================ */
 app.get("/live-order", async (req, res) => {
   try {
-    const liveList = await getLiveStatus();  // ex: ["valiv2","skyrroztv"]
+    const liveList = await getLiveStatus(); // ex: ["valiv2","facteurgeek"]
 
     const live = [];
     const offline = [];
 
-    // Sépare les chaînes live et offline en respectant l'ordre de CHANNELS
     for (const ch of CHANNELS) {
       if (liveList.includes(ch.toLowerCase())) live.push(ch);
       else offline.push(ch);
     }
 
+    const fg = "facteurgeek";
     const vali = "valiv2";
-    const liveNoVali = live.filter(c => c.toLowerCase() !== vali.toLowerCase());
 
     let ordered = [];
 
-    if (liveList.includes(vali.toLowerCase())) {
-      // 🎯 Vali est live → il est toujours #1
+    if (liveList.includes(fg.toLowerCase())) {
+      // ⭐ FACTEURGEEK = #1 ABSOLU
+      ordered = [
+        fg,
+        ...live.filter(c => c.toLowerCase() !== fg.toLowerCase()),
+        ...offline.filter(c => c.toLowerCase() !== fg.toLowerCase())
+      ];
+    } else if (liveList.includes(vali.toLowerCase())) {
+      // ⭐ Vali est #1 seulement si FG n'est pas live
       ordered = [
         vali,
-        ...liveNoVali,
+        ...live.filter(c => c.toLowerCase() !== vali.toLowerCase()),
         ...offline.filter(c => c.toLowerCase() !== vali.toLowerCase())
       ];
     } else {
-      // Vali n'est pas live → on garde l'ordre: live d'abord, puis offline
+      // Aucun FG/Vali → live en premier, offline ensuite
       ordered = [...live, ...offline];
     }
 
     res.json({ ordered, live: liveList });
+
   } catch (err) {
     console.error("❌ Erreur /live-order:", err);
     res.status(500).json({
